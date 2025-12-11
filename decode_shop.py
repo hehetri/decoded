@@ -13,7 +13,9 @@ The original 2015 script used a ``convertway`` flag with three modes:
     Read the encrypted ``shop.bin``, decode it, and emit ``shopout.txt``.
 
 This module exposes equivalent behavior through a tidy CLI while keeping the
-fixed-width record layout used by the game data.
+fixed-width record layout used by the game data. This variant adds a fourth
+mode to re-encode an already decoded binary back to its encrypted ``shop.bin``
+form.
 """
 from __future__ import annotations
 
@@ -27,6 +29,7 @@ HEADER_SKIP = 26
 COUNT_SIZE = 4
 DEFAULT_ENCRYPTED = pathlib.Path("shop.bin")
 DEFAULT_DECODED = pathlib.Path("shop_decoded.bin")
+DEFAULT_ENCODED = pathlib.Path("shop.bin")
 DEFAULT_TEXT = pathlib.Path("shopout.txt")
 
 
@@ -215,14 +218,32 @@ def convert_encrypted_to_text(
     write_output(text_path, total_items, records)
 
 
+def convert_plain_to_encrypted(
+    decoded_path: pathlib.Path, encrypted_path: pathlib.Path
+) -> None:
+    encrypted_path.write_bytes(encode_bytes(decoded_path.read_bytes()))
+
+
+def convert_text_to_encrypted(
+    text_path: pathlib.Path, encrypted_path: pathlib.Path, template: pathlib.Path | None
+) -> None:
+    total_items, records = read_text_records(text_path)
+    header_bytes = b""
+    if template and template.exists():
+        header_bytes = template.read_bytes()[:HEADER_SKIP]
+
+    blob = build_binary_blob(header_bytes, total_items, records)
+    encrypted_path.write_bytes(encode_bytes(blob))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Convert shop.bin data between formats.")
     parser.add_argument(
         "mode",
-        choices=["1", "2", "3"],
+        choices=["1", "2", "3", "4"],
         help=(
             "1: decoded binary -> text, 2: text -> decoded binary, "
-            "3: encrypted binary -> text"
+            "3: encrypted binary -> text, 4: decoded/text -> encrypted binary"
         ),
     )
     parser.add_argument(
@@ -252,10 +273,18 @@ def main():
         text = args.input or DEFAULT_TEXT
         decoded = args.output or DEFAULT_DECODED
         convert_text_to_plain(text, decoded, args.template)
-    else:  # args.mode == "3"
+    elif args.mode == "3":
         encrypted = args.input or DEFAULT_ENCRYPTED
         text = args.output or DEFAULT_TEXT
         convert_encrypted_to_text(encrypted, text)
+    else:  # args.mode == "4"
+        source = args.input or DEFAULT_DECODED
+        encrypted = args.output or DEFAULT_ENCODED
+
+        if source.suffix.lower() == ".txt":
+            convert_text_to_encrypted(source, encrypted, args.template)
+        else:
+            convert_plain_to_encrypted(source, encrypted)
 
 
 if __name__ == "__main__":

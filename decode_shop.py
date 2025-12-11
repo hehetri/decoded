@@ -192,6 +192,20 @@ def build_binary_blob(
     return header + struct.pack("<I", total_items) + payload
 
 
+def read_header_bytes(*candidates: pathlib.Path | None) -> bytes:
+    """Return the first available header bytes from the given *candidates*.
+
+    The first existing path contributes its first ``HEADER_SKIP`` bytes. If no
+    candidate exists, an empty header is returned.
+    """
+
+    for path in candidates:
+        if path and path.exists():
+            return path.read_bytes()[:HEADER_SKIP]
+
+    return b""
+
+
 def convert_plain_to_text(decoded_path: pathlib.Path, text_path: pathlib.Path) -> None:
     total_items, records = parse_records(decoded_path.read_bytes())
     write_output(text_path, total_items, records)
@@ -201,10 +215,7 @@ def convert_text_to_plain(
     text_path: pathlib.Path, decoded_path: pathlib.Path, template: pathlib.Path | None
 ) -> None:
     total_items, records = read_text_records(text_path)
-    header_source = template if template and template.exists() else decoded_path
-    header_bytes = b""
-    if header_source.exists():
-        header_bytes = header_source.read_bytes()[:HEADER_SKIP]
+    header_bytes = read_header_bytes(template, decoded_path)
 
     blob = build_binary_blob(header_bytes, total_items, records)
     decoded_path.write_bytes(blob)
@@ -228,9 +239,7 @@ def convert_text_to_encrypted(
     text_path: pathlib.Path, encrypted_path: pathlib.Path, template: pathlib.Path | None
 ) -> None:
     total_items, records = read_text_records(text_path)
-    header_bytes = b""
-    if template and template.exists():
-        header_bytes = template.read_bytes()[:HEADER_SKIP]
+    header_bytes = read_header_bytes(template, encrypted_path, DEFAULT_ENCRYPTED)
 
     blob = build_binary_blob(header_bytes, total_items, records)
     encrypted_path.write_bytes(encode_bytes(blob))
